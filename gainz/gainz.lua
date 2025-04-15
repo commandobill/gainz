@@ -7,7 +7,7 @@
 
 addon.name    = 'gainz';
 addon.author  = 'Commandobill';
-addon.version = '1.0';
+addon.version = '1.1';
 addon.desc    = 'Displays Gainz event timer info on demand.';
 
 require('common');
@@ -30,36 +30,37 @@ end
 -- Core logic
 local function get_gainz_status()
     local now = os.date('!*t') -- UTC time
-    local wday = now.wday - 1  -- Sunday=1 in Lua, so subtract 1
+    local wday = now.wday - 1  -- Sunday=1, convert to 0-indexed
     local curr_min = now.hour * 60 + now.min
+    local now_total = wday * 1440 + curr_min
 
-    local closest_diff = math.huge
+    local soonest_start_diff = math.huge
     local next_msg = nil
 
     for _, event in ipairs(event_times) do
-        local day_offset = (event.day - wday) % 7
-        local start_min = day_offset * 1440 + event.start
-        local end_min = day_offset * 1440 + event.finish
-        local now_total = 0
+        local event_start_total = event.day * 1440 + event.start
+        local event_end_total = event.day * 1440 + event.finish
 
-        if day_offset == 0 then
-            now_total = curr_min
-            if now_total >= event.start and now_total < event.finish then
-                -- Currently active
-                local minutes_left = event.finish - now_total
-                return chat.header(addon.name) .. chat.message('Gainz is active! Ends in ' .. format_time(minutes_left) .. '.')
-            end
+        if now_total >= event_start_total and now_total < event_end_total then
+            local minutes_left = event_end_total - now_total
+            return chat.header(addon.name) .. chat.message('Gainz is active! Ends in ' .. format_time(minutes_left) .. '.')
         end
 
-        local time_until_start = start_min - curr_min
-        if time_until_start < closest_diff then
-            closest_diff = time_until_start
-            next_msg = 'Gainz will start in ' .. format_time(time_until_start) .. '.'
+        -- Calculate how many minutes until this event starts, rolling into next week if necessary
+        local time_until = event_start_total - now_total
+        if time_until < 0 then
+            time_until = time_until + 7 * 1440 -- add a week
+        end
+
+        if time_until < soonest_start_diff then
+            soonest_start_diff = time_until
+            next_msg = 'Gainz will start in ' .. format_time(time_until) .. '.'
         end
     end
 
     return chat.header(addon.name) .. chat.message(next_msg or 'Unable to determine gainz time.')
 end
+
 
 -- Register the /gainz command
 ashita.events.register('command', 'gainz_command_cb', function(e)
